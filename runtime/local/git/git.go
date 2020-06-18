@@ -10,13 +10,11 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
 type Gitter interface {
 	Clone(repo string) error
-	FetchAll(repo string) error
 	Checkout(repo, branchOrCommit string) error
 	RepoDir(repo string) string
 }
@@ -39,27 +37,6 @@ func (g libGitter) Clone(repo string) error {
 		Progress: os.Stdout,
 	})
 	return err
-}
-
-func (g libGitter) FetchAll(repo string) error {
-	repos, err := git.PlainOpen(filepath.Join(g.folder, dirifyRepo(repo)))
-	if err != nil {
-		return err
-	}
-	remotes, err := repos.Remotes()
-	if err != nil {
-		return err
-	}
-
-	err = remotes[0].Fetch(&git.FetchOptions{
-		RefSpecs: []config.RefSpec{"refs/*:refs/*", "HEAD:refs/heads/HEAD"},
-		Progress: os.Stdout,
-		Depth:    1,
-	})
-	if err != nil && err != git.NoErrAlreadyUpToDate {
-		return err
-	}
-	return nil
 }
 
 func (g libGitter) Checkout(repo, branchOrCommit string) error {
@@ -120,26 +97,30 @@ func (g binaryGitter) Clone(repo string) error {
 	return err
 }
 
-func (g binaryGitter) FetchAll(repo string) error {
-	cmd := exec.Command("git", "fetch", "--all")
-	cmd.Dir = filepath.Join(g.folder, dirifyRepo(repo))
-	outp, err := cmd.CombinedOutput()
-	if err != nil {
-		return errors.New(string(outp))
-	}
-	return err
-}
-
 func (g binaryGitter) Checkout(repo, branchOrCommit string) error {
 	if branchOrCommit == "latest" {
 		branchOrCommit = "master"
 	}
-	cmd := exec.Command("git", "checkout", "-f", branchOrCommit)
-	cmd.Dir = filepath.Join(g.folder, dirifyRepo(repo))
+	dir := filepath.Join(g.folder, dirifyRepo(repo))
+
+	// @todo Some of these might fail. This really needs some consideration.
+	// These commands are really hacky and untested.
+
+	cmd := exec.Command("git", "checkout", "-b", branchOrCommit, "origin/"+branchOrCommit)
+	cmd.Dir = dir
+	cmd.CombinedOutput()
+
+	cmd = exec.Command("git", "checkout", "-f", branchOrCommit)
+	cmd.Dir = dir
 	outp, err := cmd.CombinedOutput()
 	if err != nil {
 		return errors.New(string(outp))
 	}
+
+	cmd = exec.Command("git", "pull", "origin", branchOrCommit)
+	cmd.Dir = dir
+	cmd.CombinedOutput()
+
 	return nil
 }
 
